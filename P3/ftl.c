@@ -27,7 +27,7 @@ void ftl_open()
 	int i;
 
 	// initialize the address mapping table
-	for(i = 0; i < DATABLKS_PER_DEVICE; i++)
+	for(i = 0; i < DATABLKS_PER_DEVICE; i++) //lbn(=i)을 pbn으로 매핑
 	{
 		addrmaptbl.pbn[i] = -1;
 	}
@@ -56,6 +56,20 @@ void ftl_write(int lsn, char *sectorbuf);
 	// 따라서 reserved_empty_blk는 고정되어 있는 것이 아니라 상황에 따라 계속 바뀔 수 있음
 	//
 	int reserved_empty_blk = DATABLKS_PER_DEVICE;
+    int lbn, offset, pbn, ppn;
+    char pagebuf[PAGE_SIZE];
+    memset(pagebuf, 0xff, PAGE_SIZE);
+
+    //lsn 통해 ppn구하기
+    lbn = lsn / PAGES_PER_BLOCK;
+    offset = lsn % PAGES_PER_BLOCK;
+    pbn = addrmaptbl.pbn[lbn];
+    ppn = pbn * PAGES_PER_BLOCK + offset;
+
+
+    if(dd_write(ppn, pagebuf) == -1) {
+        fprintf(stderr, "dd_write error\n");
+    }
 
 
 	return;
@@ -67,6 +81,23 @@ void ftl_write(int lsn, char *sectorbuf);
 // 
 void ftl_read(int lsn, char *sectorbuf);
 {
+    int lbn, offset, pbn, ppn;
+    char pagebuf[PAGE_SIZE];
+    memset(pagebuf, 0xff, PAGE_SIZE);
+
+    //lsn 통해 ppn구하기
+    lbn = lsn / PAGES_PER_BLOCK;
+    offset = lsn % PAGES_PER_BLOCK;
+    pbn = addrmaptbl.pbn[lbn];
+    ppn = pbn * PAGES_PER_BLOCK + offset;
+
+    //flashmemory에서 ppn에 해당하는 페이지를 읽어와서 sectorbuf에 저장
+    if(dd_read(ppn, pagebuf) == -1) {
+        fprintf(stderr, "dd_read error\n");
+    }
+
+    memcpy(sectorbuf, pagebuf, SECTOR_SIZE);
+
 #ifdef PRINT_FOR_DEBUG			// 필요 시 현재의 block mapping table을 출력해 볼 수 있음
 	print_addrmaptbl_info();
 #endif
