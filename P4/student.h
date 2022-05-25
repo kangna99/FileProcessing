@@ -5,6 +5,7 @@
 #define HEADER_SIZE	8	// #records(4 bytes) + reserved(4 bytes)
 
 // 필요한 경우 'define'을 추가할 수 있음.
+#define MAX_VALUE 30
 
 enum FIELD {ID=0, NAME, DEPT, ADDR, EMAIL};
 

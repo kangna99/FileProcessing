@@ -50,6 +50,11 @@ enum FIELD getFieldID(char *fieldname);
 void main(int argc, char *argv[])
 {
 	FILE *fp;			// 모든 file processing operation은 C library를 사용할 것
+    char *token;
+    char field[10];
+    char value[MAX_VALUE + 1];
+    memset(field, 0, sizeof(field));
+    memset(value, 0, sizeof(value));
 
     //레코드 파일이 있으면 열고 없으면 새로운 파일 생성
     if((fp = fopen(argv[2], "r+")) == NULL) {
@@ -61,7 +66,7 @@ void main(int argc, char *argv[])
 
         //예외처리
         if(argc != 8) {
-            fprintf(stderr, "input error\nusage: %s -a <record_file_name> \"id\" \"name\" \"dept\" \"addr\" \"email\"", argv[0]);
+            fprintf(stderr, "input error\nusage: %s -a <record_file_name> \"id\" \"name\" \"dept\" \"addr\" \"email\"\n", argv[0]);
             exit(1);
         }
         if(strlen(argv[3]) > 8) {
@@ -97,13 +102,16 @@ void main(int argc, char *argv[])
 
         //예외처리
         if(argc != 4) {
-            fprintf(stderr, "input error\nusage: %s -s <record_file_name> \"field_name = field_value\"", argv[0]);
+            fprintf(stderr, "input error\nusage: %s -s <record_file_name> \"field_name = field_value\"\n", argv[0]);
             exit(1);
         }
+        //검색할 입력값을 필드와 값으로 split
+        token = strtok(argv[3], "=");
+        strcpy(field, token);
+        token = strtok(NULL, "=");
+        strcpy(value, token);
 
-        //argc[3]을 split해서 필드는 getFieldID()를 거쳐 searchRecord의 두번째 인자로 넣고
-        //split한것의 뒤쪽은 searchRecord의 세번째 인자로 넣어줌.
-        //searchRecord(fp, getFieldID(), );
+        searchRecord(fp, getFieldID(field), value);
 
     }
     return;
@@ -114,16 +122,18 @@ void printRecord(const STUDENT *s)
 	printf("%s | %s | %s | %s | %s\n", s->id, s->name, s->dept, s->addr, s->email);
 }
 
-void unpack(const char *recordbuf, STUDENT *s) {
+void unpack(const char *recordbuf, STUDENT *s)
+{
     sscanf(recordbuf, "%[^'#']#%[^'#']#%[^'#']#%[^'#']#%[^'#']#", s->id, s->name, s->dept, s->addr, s->email);
 }
 
-void pack(char *recordbuf, const STUDENT *s) {
+void pack(char *recordbuf, const STUDENT *s)
+{
     sprintf(recordbuf, "%s#%s#%s#%s#%s#", s->id, s->name, s->dept, s->addr, s->email);
 }
 
-enum FIELD getFieldID(char *fieldname) {
-
+enum FIELD getFieldID(char *fieldname)
+{
     if(!strcmp(fieldname, "ID"))
         return ID;
     else if(!strcmp(fieldname, "NAME"))
@@ -140,7 +150,8 @@ enum FIELD getFieldID(char *fieldname) {
     }
 }
 
-int appendRecord(FILE *fp, char *id, char *name, char *dept, char *addr, char *email) {
+int appendRecord(FILE *fp, char *id, char *name, char *dept, char *addr, char *email)
+{
     int record_cnt = 0; //파일에 저장된 레코드 수
     int new_record_cnt;
     int rrn = 0;
@@ -174,13 +185,13 @@ int appendRecord(FILE *fp, char *id, char *name, char *dept, char *addr, char *e
     return result;
 }
 
-int writeRecord(FILE *fp, const STUDENT *s, int rrn) {
+int writeRecord(FILE *fp, const STUDENT *s, int rrn)
+{
     //주어진 rrn 위치에 recordbuf에 저장된 레코드를 저장
     char recordbuf[RECORD_SIZE];
     memset(recordbuf, 0, sizeof(recordbuf));
     pack(recordbuf, s);
-    printf("rrn: %d\n", rrn);
-    fseek(fp, HEADER_SIZE+RECORD_SIZE*rrn, SEEK_SET);
+    fseek(fp, HEADER_SIZE + RECORD_SIZE * rrn, SEEK_SET);
 
     //성공적으로 수행하면 1을 리턴, 실패 시 0을 리턴
     if((fwrite(recordbuf, sizeof(recordbuf), 1, fp)) == 1)
@@ -188,10 +199,63 @@ int writeRecord(FILE *fp, const STUDENT *s, int rrn) {
     else return 0;
 }
 
-void searchRecord(FILE *fp, enum FIELD f, char *keyval) {
+void searchRecord(FILE *fp, enum FIELD f, char *keyval)
+{
+    int record_cnt = 0; //파일에 저장된 레코드 수
 
+    //학생 구조체 생성 및 초기화
+    STUDENT *s;
+    s = (STUDENT *)malloc(sizeof(STUDENT));
+    memset(s, 0, sizeof(STUDENT));
+
+    fread(&record_cnt, sizeof(int), 1, fp); //파일에 저장된 총 레코드 수를 읽음
+ 
+    
+    //모든 레코드에 대해 sequential search를 수행
+    for(int rrn = 0; rrn < record_cnt; rrn++) {
+        rewind(fp);
+        int result = readRecord(fp, s, rrn);
+        if(result == 1) {
+            //검색값이 일치하는 레코드를 찾아 만족하는 모든 레코드를 출력
+            switch(f) {
+                case ID:
+                    if(!strcmp(keyval, s->id))
+                        printRecord(s);
+                    break;
+                case NAME:
+                    if(!strcmp(keyval, s->name))
+                        printRecord(s);
+                    break;
+                case DEPT:
+                    if(!strcmp(keyval, s->dept))
+                        printRecord(s);
+                    break;
+                case ADDR:
+                    if(!strcmp(keyval, s->addr))
+                        printRecord(s);
+                    break;
+                case EMAIL:
+                    if(!strcmp(keyval, s->email))
+                        printRecord(s);
+                    break;
+            }
+        }
+        else {
+            fprintf(stderr, "searchRecord error\n");
+            exit(1);
+        }
+    }
 }
 
-int readRecord(FILE *fp, STUDENT *s, int rrn) {
+int readRecord(FILE *fp, STUDENT *s, int rrn)
+{
+    //파일에서 주어진 rrn 위치에 해당하는 레코드를 읽어 recordbuf에 저장 후 field별 구분
+    char recordbuf[RECORD_SIZE];
+    memset(recordbuf, 0, sizeof(recordbuf));
 
+    fseek(fp, HEADER_SIZE + RECORD_SIZE * rrn, SEEK_SET);
+    int result = fread(recordbuf, sizeof(recordbuf), 1, fp);
+    unpack(recordbuf, s);
+    
+    return result;
 }
