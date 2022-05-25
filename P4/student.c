@@ -1,4 +1,6 @@
 #include <stdio.h>		// 필요한 header file 추가 가능
+#include <stdlib.h>
+#include <string.h>
 #include "student.h"
 
 //
@@ -7,7 +9,7 @@
 // 각 필드값을 저장한다. 성공하면 1을 그렇지 않으면 0을 리턴한다.
 // unpack() 함수는 recordbuf에 저장되어 있는 record에서 각 field를 추출하는 일을 한다.
 //
-int readRecord((FILE *fp, STUDENT *s, int rrn);
+int readRecord(FILE *fp, STUDENT *s, int rrn);
 void unpack(const char *recordbuf, STUDENT *s);
 
 //
@@ -35,7 +37,7 @@ int appendRecord(FILE *fp, char *id, char *name, char *dept, char *addr, char *e
 // 검색 결과를 출력할 때 반드시 printRecord() 함수를 사용한다. (반드시 지켜야 하며, 그렇지
 // 않는 경우 채점 프로그램에서 자동적으로 틀린 것으로 인식함)
 //
-void searchRecord(FILE *fp, FIELD f, char *keyval);
+void searchRecord(FILE *fp, enum FIELD f, char *keyval);
 void printRecord(const STUDENT *s);
 
 //
@@ -43,14 +45,153 @@ void printRecord(const STUDENT *s);
 // 예를 들면, 사용자가 수행한 명령어의 인자로 "NAME"이라는 필드명을 사용하였다면 
 // 프로그램 내부에서 이를 NAME(=1)으로 변환할 필요성이 있으며, 이때 이 함수를 이용한다.
 //
-FIELD getFieldID(char *fieldname);
+enum FIELD getFieldID(char *fieldname);
 
 void main(int argc, char *argv[])
 {
 	FILE *fp;			// 모든 file processing operation은 C library를 사용할 것
+
+    //레코드 파일이 있으면 열고 없으면 새로운 파일 생성
+    if((fp = fopen(argv[2], "r+")) == NULL) {
+        fp = fopen(argv[2], "w+");
+    }
+
+    //기능1) 레코드 추가 -a 옵션
+    if(!strcmp(argv[1], "-a")) {
+
+        //예외처리
+        if(argc != 8) {
+            fprintf(stderr, "input error\nusage: %s -a <record_file_name> \"id\" \"name\" \"dept\" \"addr\" \"email\"", argv[0]);
+            exit(1);
+        }
+        if(strlen(argv[3]) > 8) {
+            fprintf(stderr, "id max length is 8\n");
+            exit(1);
+        }
+        if(strlen(argv[4]) > 10) {
+            fprintf(stderr, "name max length is 10\n");
+            exit(1);
+        }
+        if(strlen(argv[5]) > 12) {
+            fprintf(stderr, "dept max length is 12\n");
+            exit(1);
+        }
+        if(strlen(argv[6]) > 30) {
+            fprintf(stderr, "addr max length is 30\n");
+            exit(1);
+        }
+        if(strlen(argv[7]) > 20) {
+            fprintf(stderr, "email max length is 20\n");
+            exit(1);
+        }
+
+        //입력받은 값으로 레코드 추가
+        if((appendRecord(fp, argv[3], argv[4], argv[5], argv[6], argv[7])) == 0) {
+            fprintf(stderr, "appendRecord fail\n");
+            exit(1);
+        }
+    }
+
+    //기능2) 레코드 검색 -s 옵션
+    if(!strcmp(argv[1], "-s")) {
+
+        //예외처리
+        if(argc != 4) {
+            fprintf(stderr, "input error\nusage: %s -s <record_file_name> \"field_name = field_value\"", argv[0]);
+            exit(1);
+        }
+
+        //argc[3]을 split해서 필드는 getFieldID()를 거쳐 searchRecord의 두번째 인자로 넣고
+        //split한것의 뒤쪽은 searchRecord의 세번째 인자로 넣어줌.
+        //searchRecord(fp, getFieldID(), );
+
+    }
+    return;
 }
 
 void printRecord(const STUDENT *s)
 {
 	printf("%s | %s | %s | %s | %s\n", s->id, s->name, s->dept, s->addr, s->email);
+}
+
+void unpack(const char *recordbuf, STUDENT *s) {
+    sscanf(recordbuf, "%[^'#']#%[^'#']#%[^'#']#%[^'#']#%[^'#']#", s->id, s->name, s->dept, s->addr, s->email);
+}
+
+void pack(char *recordbuf, const STUDENT *s) {
+    sprintf(recordbuf, "%s#%s#%s#%s#%s#", s->id, s->name, s->dept, s->addr, s->email);
+}
+
+enum FIELD getFieldID(char *fieldname) {
+
+    if(!strcmp(fieldname, "ID"))
+        return ID;
+    else if(!strcmp(fieldname, "NAME"))
+        return NAME;
+    else if(!strcmp(fieldname, "DEPT"))
+        return DEPT;
+    else if(!strcmp(fieldname, "ADDR"))
+        return ADDR;
+    else if(!strcmp(fieldname, "EMAIL"))
+        return EMAIL;
+    else {
+        fprintf(stderr, "getFieldID error\n");
+        exit(1);
+    }
+}
+
+int appendRecord(FILE *fp, char *id, char *name, char *dept, char *addr, char *email) {
+    int record_cnt = 0; //파일에 저장된 레코드 수
+    int new_record_cnt;
+    int rrn = 0;
+    int result; //writeRecord 수행 반환값
+    char header[HEADER_SIZE]; //헤더
+    memset(header, 0, sizeof(header));
+
+    //학생 구조체 생성 및 초기화
+    STUDENT *s;
+    s = (STUDENT *)malloc(sizeof(STUDENT));
+    memset(s, 0, sizeof(STUDENT));
+    strcpy(s->id, id);
+    strcpy(s->name, name);
+    strcpy(s->dept, dept);
+    strcpy(s->addr, addr);
+    strcpy(s->email, email);
+
+    //처음 쓸 땐 header 레코드를 파일에 생성하고 rrn=0, 이후엔 rrn을 헤더 기반으로 찾음 
+    if(fread(&record_cnt, sizeof(int), 1, fp) == 0) {
+        fwrite(header, sizeof(header), 1, fp);
+    }
+    else {
+        rrn = record_cnt;
+    }
+    //rrn에 record 저장하고 header 수정
+    if((result = writeRecord(fp, s, rrn)) == 1) { //정상적으로 수행
+        rewind(fp);
+        new_record_cnt = record_cnt + 1;
+        fwrite(&new_record_cnt, sizeof(int), 1, fp);
+    }
+    return result;
+}
+
+int writeRecord(FILE *fp, const STUDENT *s, int rrn) {
+    //주어진 rrn 위치에 recordbuf에 저장된 레코드를 저장
+    char recordbuf[RECORD_SIZE];
+    memset(recordbuf, 0, sizeof(recordbuf));
+    pack(recordbuf, s);
+    printf("rrn: %d\n", rrn);
+    fseek(fp, HEADER_SIZE+RECORD_SIZE*rrn, SEEK_SET);
+
+    //성공적으로 수행하면 1을 리턴, 실패 시 0을 리턴
+    if((fwrite(recordbuf, sizeof(recordbuf), 1, fp)) == 1)
+        return 1;
+    else return 0;
+}
+
+void searchRecord(FILE *fp, enum FIELD f, char *keyval) {
+
+}
+
+int readRecord(FILE *fp, STUDENT *s, int rrn) {
+
 }
