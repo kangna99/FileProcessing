@@ -257,6 +257,9 @@ void searchRecord(FILE *fp, enum FIELD f, char *keyval)
         rewind(fp);
         int result = readRecord(fp, s, rrn);
         if(result == 1) {
+            //삭제된 레코드라면 검색에서 제외
+            if(strchr(s->id, '*') != NULL)
+                continue;
             //검색값이 일치하는 레코드를 찾아 만족하는 모든 레코드를 출력
             switch(f) {
                 case ID:
