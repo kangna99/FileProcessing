@@ -154,6 +154,42 @@ void main(int argc, char *argv[])
         }
     }
 
+    //기능4) 레코드 삽입 -i 옵션
+    if(!strcmp(argv[1], "-i")) {
+
+        //예외처리
+        if(argc != 8) {
+            fprintf(stderr, "input error\nusage: %s -i <record_file_name> \"id\" \"name\" \"dept\" \"addr\" \"email\"\n", argv[0]);
+            exit(1);
+        }
+        if(strlen(argv[3]) > 8) {
+            fprintf(stderr, "id max length is 8\n");
+            exit(1);
+        }
+        if(strlen(argv[4]) > 10) {
+            fprintf(stderr, "name max length is 10\n");
+            exit(1);
+        }
+        if(strlen(argv[5]) > 12) {
+            fprintf(stderr, "dept max length is 12\n");
+            exit(1);
+        }
+        if(strlen(argv[6]) > 30) {
+            fprintf(stderr, "addr max length is 30\n");
+            exit(1);
+        }
+        if(strlen(argv[7]) > 20) {
+            fprintf(stderr, "email max length is 20\n");
+            exit(1);
+        }
+
+        //입력받은 값으로 레코드 삽입
+        if((insertRecord(fp, argv[3], argv[4], argv[5], argv[6], argv[7])) == 0) {
+            fprintf(stderr, "insertRecord fail\n");
+            exit(1);
+        }
+    }
+
     return;
 }
 
@@ -311,14 +347,11 @@ int deleteRecord(FILE *fp, enum FIELD f, char *keyval)
     int rrn;
     char deleteMark = '*';
     int d_list = -1;
-    char header[HEADER_SIZE]; //헤더
 
-    
     //학생 구조체 생성 및 초기화
     STUDENT *s;
     s = (STUDENT *)malloc(sizeof(STUDENT));
     memset(s, 0, sizeof(STUDENT));
-
     
     //헤더레코드 읽기
     fread(&record_cnt, sizeof(int), 1, fp);
@@ -337,28 +370,29 @@ int deleteRecord(FILE *fp, enum FIELD f, char *keyval)
             fprintf(stderr, "searchRecord error\n");
             exit(1);
         }
-    }
-    
+    } 
 
     if(rrn == record_cnt) //삭제 대상 찾기 실패
         return 0;
     
     else { //삭제 대상 찾기 성공
-
-        //찾은 rrn 첫번째 바이트에 deleteMark를 저장
-        fseek(fp, HEADER_SIZE + RECORD_SIZE * rrn, SEEK_SET);
-        fwrite(&deleteMark, sizeof(char), 1, fp);
-        //deleteMark뒤에는 가장 최근에 삭제된 레코드임을 알리는 -1을 저장
-        fwrite(&d_list, sizeof(char), 1, fp);
         
-        //전에 삭제된 레코드가 있었다면 해당 레코드의 '*-1' 값을 '*rrn' 형식으로 업데이트하여 삭제 레코드 리스트 관리
+        //전에 삭제된 레코드가 있었다면 해당 레코드의 첫 2byte 값을 '*deleted_rrn' 형식으로 업데이트하여 삭제 레코드 리스트 관리
         if(deleted_rrn != -1) {
-            fseek(fp, HEADER_SIZE + RECORD_SIZE * deleted_rrn + 1, SEEK_SET);
-            fwrite(&rrn, sizeof(char), 1, fp);
+            //찾은 rrn 첫번째 바이트에 deleteMark를 저장
+            fseek(fp, HEADER_SIZE + RECORD_SIZE * rrn, SEEK_SET);
+            fwrite(&deleteMark, sizeof(char), 1, fp);
+            //deleteMark 뒤에 이전 삭제 rrn을 저장
+            fwrite(&deleted_rrn, sizeof(char), 1, fp);
+        }
+        //처음 삭제하는 레코드라면 해당 레코드의 첫 2byte 값을 '*-1'으로 업데이트
+        else {
+            fseek(fp, HEADER_SIZE+RECORD_SIZE * rrn, SEEK_SET);
+            fwrite(&deleteMark, sizeof(char), 1, fp);
+            fwrite(&d_list, sizeof(char), 1, fp);
         }
         
         //헤더레코드 예약공간에 이진정수 형태로 삭제한 rrn 저장
-        rewind(fp);
         fseek(fp, sizeof(int), SEEK_SET);
         fwrite(&rrn, sizeof(int), 1, fp);
         
@@ -368,5 +402,43 @@ int deleteRecord(FILE *fp, enum FIELD f, char *keyval)
 
 int insertRecord(FILE *fp, char *id, char *name, char *dept, char *addr, char *email)
 {
+    int record_cnt = 0; //파일에 저장된 총 레코드 수(header)
+    int deleted_rrn = 0; //가장 최근에 삭제된 레코드 번호(header)
+    int new_record_cnt, result;
+    char temp;
 
+    //학생 구조체 생성 및 초기화
+    STUDENT *s;
+    s = (STUDENT *)malloc(sizeof(STUDENT));
+    memset(s, 0, sizeof(STUDENT));
+    strcpy(s->id, id);
+    strcpy(s->name, name);
+    strcpy(s->dept, dept);
+    strcpy(s->addr, addr);
+    strcpy(s->email, email);
+
+    //헤더레코드 읽기
+    fread(&record_cnt, sizeof(int), 1, fp);
+    fread(&deleted_rrn, sizeof(int), 1, fp);
+
+    if(deleted_rrn != -1) { //삭제된 레코드가 있다면
+        //최근 삭제된 레코드의 이전 삭제 rrn을 임시 저장
+        fseek(fp, HEADER_SIZE + RECORD_SIZE * deleted_rrn + 1, SEEK_SET);
+        fread(&temp, sizeof(char), 1, fp);
+        rewind(fp);
+        
+        //최근 삭제된 rrn 위치에 새로운 레코드 삽입 후 header 수정
+        if((result = writeRecord(fp, s, deleted_rrn)) == 1) { //정상적으로 수행
+            //헤더 수정
+            int prev_rrn = temp; //형변환
+            fseek(fp, sizeof(int), SEEK_SET);
+            fwrite(&prev_rrn, sizeof(int), 1, fp);
+        }       
+    }
+    else {//삭제된 레코드가 없다면 기능1) 레코드 추가를 이용
+        rewind(fp);
+        result = appendRecord(fp, id, name, dept, addr, email);
+    }
+
+    return result;
 }
